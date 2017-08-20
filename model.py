@@ -6,6 +6,7 @@ from glob import glob
 import tensorflow as tf
 import numpy as np
 import yaml
+import torch
 
 with open("SeqGAN.yaml") as stream:
     try:
