@@ -1,0 +1,27 @@
+## Set GPU ID
+GPU : '0'
+## Data Loading params
+NUM_FOLD : 5
+NUM_CLASS : 2
+DATA_DIR : '../data/'
+FILE_NAME : 'ae_padding2'
+## Learning params
+LEARNING_RATE : 1e-4
+BATCH_SIZE : 50
+EPOCHS : 3000
+D_STEPS : 1
+G_STEPS : 1
+epsilon : 1e-8
+LOG_EVERY : 10
+## Model params
+# generator
+G_INPUT_SIZE : 50 # random noise (z)
+G_HIDDEN_SIZE : 80 # generator complexity
+G_OUTPUT_SIZE :  # size of generated output vector
+# discriminator
+D_INPUT_SIZE :  # minibatch size
+D_HIDDEN_SIZE : 80 # discriminator complexity
+D_OUTPUT_SIZE : 2
+# autoencoder
+AE_INPUT_SIZE :
+AE_HIDDEN_SIZE : 10
