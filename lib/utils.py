@@ -3,7 +3,9 @@ import numpy as np
 import sklearn.datasets
 import yaml
 from copy import copy
-with open('test.yaml') as stream:
+import torch
+
+with open('MD_GAN.yaml') as stream:
     try:
         config = yaml.load(stream)
     except yaml.YAMLError as exc:
@@ -108,12 +110,23 @@ def load_minibatch(X_train, y_train):
             if end > num_train:
                 end = num_train
             # mini-batch
-            X_mb = X_train
-            y_mb = y_train[start:end]
-            z_mb = sample_z(end - start, z_dim)
+            X_mb = torch.FloatTensor(X_train[start:end])
+            y_mb = torch.FloatTensor(y_train[start:end])
+            z_mb = torch.FloatTensor(sample_z(end - start, z_dim))
             zy_mb = copy(y_mb)
             yield X_mb, y_mb, z_mb, zy_mb
 
+def uneye(y, type):
+    # process y
+    _, y = torch.max(y, 1)
+    if type == 'model':
+        y = y.type(torch.FloatTensor).cuda()
+        y = y.unsqueeze(1)
+    elif type == 'pred':
+        y = y.type(torch.LongTensor).cuda().squeeze()
+    else:
+        raise TypeError
+    return y
 
 if __name__ == '__main__':
     a=load_data()
