@@ -17,8 +17,8 @@ class Generator(nn.Module):
         x = torch.cat((x,y), 1)
         # feedforward
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        #x = F.relu(self.fc2(x))
+        return F.sigmoid(self.fc3(x))
 
 
 class Discriminator(nn.Module):
@@ -30,7 +30,7 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        return self.out_gan(x), F.softmax(self.out_aux(x))
+        return F.sigmoid(self.out_gan(x)), self.out_aux(x)
 
 
 class AutoEncoder(nn.Module):

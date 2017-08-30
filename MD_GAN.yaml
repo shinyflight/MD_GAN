@@ -4,10 +4,10 @@ GPU : '0'
 NUM_FOLD : 5
 NUM_CLASS : 2
 DATA_DIR : './data/'
-FILE_NAME : 'ae_padding2'
+FILE_NAME : 'earlystopping_ep4437_l4968_lr5'
 ## Learning params
-LEARNING_RATE : 1e-3
-BATCH_SIZE : 50
+LEARNING_RATE : 1e-2
+BATCH_SIZE : 100
 EPOCHS : 3000
 D_STEPS : 4
 G_STEPS : 1
@@ -16,12 +16,12 @@ LOG_EVERY : 10
 ## Model params
 # generator
 G_INPUT_SIZE : 50 # random noise (z)
-G_HIDDEN_SIZE : 80 # generator complexity
+G_HIDDEN_SIZE : 50 # generator complexity
 G_OUTPUT_SIZE : 30 # size of generated output vector
 # discriminator
 D_INPUT_SIZE : 30 # minibatch size
-D_HIDDEN_SIZE : 80 # discriminator complexity
-D_OUTPUT_SIZE : 2
+D_HIDDEN_SIZE : 50 # discriminator complexity
+D_OUTPUT_SIZE : 1
 # autoencoder
 AE_INPUT_SIZE : 30
 AE_HIDDEN_SIZE : 10

@@ -3,6 +3,7 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch import mean
 from torch.autograd import Variable
@@ -52,7 +53,8 @@ G = model.Generator(g_input_size, g_hidden_size, g_output_size).cuda()
 D = model.Discriminator(d_input_size, d_hidden_size, d_output_size).cuda()
 AE = model.AutoEncoder(ae_input_size, ae_hidden_size).cuda()
 # define function for calculating loss function
-BCE = nn.CrossEntropyLoss()
+def BCE(a, b):
+    return -F.cross_entropy(a, b)
 # define optimizers
 G_solver = optim.RMSprop(G.parameters(), lr=lr)
 D_solver = optim.RMSprop(D.parameters(), lr=lr)
@@ -93,10 +95,12 @@ for ex_fold in range(num_fold):
                     y_ = uneye(y, 'pred')
                     correct = torch.sum(pred == y_.data)
                     acc = correct/total * 100
+                    pred = Variable(pred).cuda()
                     # loss
                     C_loss = BCE(C_real, y_) + BCE(C_fake, y_)  # cross entropy aux loss
-                    D_loss = mean(D_real + eps) - mean(D_fake + eps)  # WGAN loss
-                    DC_loss = -(0.01*D_loss + C_loss)
+                    D_loss = torch.mean(torch.log(D_real + eps) + torch.log(1 - D_fake + eps))
+                    #D_loss = mean(D_real + eps) - mean(D_fake + eps)  # WGAN loss
+                    DC_loss = -(D_loss + C_loss)
                     # backprop & update params
                     DC_loss.backward()
                     D_solver.step()
@@ -113,11 +117,12 @@ for ex_fold in range(num_fold):
                     D_fake, C_fake = D(X_fake)
                     # loss
                     C_loss = BCE(C_real, y_) + BCE(C_fake, y_)  # cross entropy aux loss
-                    G_loss = mean(D_fake + eps)
-                    GC_loss = -(0.01*G_loss + C_loss)
+                    #G_loss = mean(D_fake + eps)  # WGAN loss
+                    G_loss = torch.mean(torch.log(D_fake + eps))
+                    GC_loss = -(G_loss + C_loss)
                     # backprop & update params
                     GC_loss.backward()
                     G_solver.step()
 
             if epoch % log_every == 0:
-                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f' % (epoch, extract(D_loss)[0], extract(G_loss)[0], extract(C_loss)[0],acc))
+                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f' % (epoch, -extract(D_loss)[0], -extract(G_loss)[0], -extract(C_loss)[0],acc))
