@@ -53,8 +53,8 @@ G = model.Generator(g_input_size, g_hidden_size, g_output_size).cuda()
 D = model.Discriminator(d_input_size, d_hidden_size, d_output_size).cuda()
 AE = model.AutoEncoder(ae_input_size, ae_hidden_size).cuda()
 # define function for calculating loss function
-def BCE(a, b):
-    return -F.cross_entropy(a, b)
+loss_bce = torch.nn.BCELoss().cuda()
+loss_nll = torch.nn.NLLLoss().cuda()
 # define optimizers
 G_solver = optim.RMSprop(G.parameters(), lr=lr)
 D_solver = optim.RMSprop(D.parameters(), lr=lr)
@@ -62,11 +62,10 @@ AE_solver = optim.Adam(AE.parameters(), lr=lr)
 
 
 # ##### Load dataset
-# real & fake labels
-real_label = Variable(torch.ones(batch_size)).cuda()
-fake_label = Variable(torch.zeros(batch_size)).cuda()
 # define dataloader
 load_data = utils.load_data()
+
+
 # ##### train loop
 for ex_fold in range(num_fold):
     for in_fold in range(num_fold):
@@ -81,6 +80,9 @@ for ex_fold in range(num_fold):
                 y = Variable(y_mb).cuda()  # class targets of real data
                 z = Variable(z_mb).cuda()
                 z_y = Variable(zy_mb).cuda()
+                # real & fake labels
+                y_real = Variable(torch.ones(y.size()[0]).unsqueeze(1)).cuda()
+                y_fake = Variable(torch.zeros(y.size()[0]).unsqueeze(1)).cuda()
                 ## Discriminator
                 for d_step in range(d_steps):
                     D.zero_grad()
@@ -92,18 +94,20 @@ for ex_fold in range(num_fold):
                     # calculate accuracy
                     _, pred = torch.max(C_real.data, 1)
                     total = y.size(0)  # calc the number of examples
-                    y_ = uneye(y, 'pred')
-                    correct = torch.sum(pred == y_.data)
+                    y_c = uneye(y, 'pred')
+                    correct = torch.sum(pred == y_c.data)
                     acc = correct/total * 100
-                    pred = Variable(pred).cuda()
+                    #pred = Variable(pred).cuda()
                     # loss
-                    C_loss = BCE(C_real, y_) + BCE(C_fake, y_)  # cross entropy aux loss
-                    D_loss = torch.mean(torch.log(D_real + eps) + torch.log(1 - D_fake + eps))
-                    #D_loss = mean(D_real + eps) - mean(D_fake + eps)  # WGAN loss
-                    DC_loss = -(D_loss + C_loss)
+                    C_loss = loss_nll(C_real, y_c) + loss_nll(C_fake, y_c)  # cross entropy aux loss
+                    D_loss = loss_bce(D_real, y_real) + loss_bce(D_fake, y_fake)
+                    #D_loss = mean(D_fake + eps) - mean(D_real + eps)  # WGAN loss
+                    DC_loss = D_loss + C_loss
                     # backprop & update params
                     DC_loss.backward()
                     D_solver.step()
+
+                    #print D._modules['fc1']._parameters['weight']
                     # weight clipping
                     for p in D.parameters():
                         p.data.clamp_(-.01, .01)
@@ -116,13 +120,14 @@ for ex_fold in range(num_fold):
                     D_real, C_real = D(X_real)  # model output
                     D_fake, C_fake = D(X_fake)
                     # loss
-                    C_loss = BCE(C_real, y_) + BCE(C_fake, y_)  # cross entropy aux loss
-                    #G_loss = mean(D_fake + eps)  # WGAN loss
-                    G_loss = torch.mean(torch.log(D_fake + eps))
-                    GC_loss = -(G_loss + C_loss)
+                    C_loss = loss_nll(C_real, y_c) + loss_nll(C_fake, y_c)  # cross entropy aux loss
+                    #G_loss = -mean(D_fake + eps)  # WGAN loss
+                    G_loss = loss_bce(D_fake, y_real)
+                    GC_loss = G_loss + C_loss
                     # backprop & update params
                     GC_loss.backward()
                     G_solver.step()
 
             if epoch % log_every == 0:
-                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f' % (epoch, -extract(D_loss)[0], -extract(G_loss)[0], -extract(C_loss)[0],acc))
+                print D_real.data[0][0], D_fake.data[0][0]
+                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f' % (epoch, extract(D_loss)[0], extract(G_loss)[0], extract(C_loss)[0],acc))

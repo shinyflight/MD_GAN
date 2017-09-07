@@ -6,7 +6,7 @@ NUM_CLASS : 2
 DATA_DIR : './data/'
 FILE_NAME : 'earlystopping_ep4437_l4968_lr5'
 ## Learning params
-LEARNING_RATE : 1e-2
+LEARNING_RATE : 1e-4
 BATCH_SIZE : 100
 EPOCHS : 3000
 D_STEPS : 4

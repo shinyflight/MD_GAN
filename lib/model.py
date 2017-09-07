@@ -30,7 +30,7 @@ class Discriminator(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        return F.sigmoid(self.out_gan(x)), self.out_aux(x)
+        return F.sigmoid(self.out_gan(x)), F.softmax(self.out_aux(x))
 
 
 class AutoEncoder(nn.Module):
