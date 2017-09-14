@@ -4,6 +4,7 @@ import sklearn.datasets
 import yaml
 from copy import copy
 import torch
+from torch.autograd import Variable
 
 with open('MD_GAN.yaml') as stream:
     try:
@@ -127,6 +128,27 @@ def uneye(y, type):
     else:
         raise TypeError
     return y
+
+def test(X_test, y_test, D):
+    # preprocess
+    X_test = torch.from_numpy(X_test)
+    y_test = torch.from_numpy(y_test)
+    X_test = Variable(X_test, volatile=True)
+    y_test = Variable(y_test)
+    if config['CUDA'] == True:
+        X_test = X_test.cuda()
+        y_test = y_test.cuda()
+    # prediction
+    _, C_test = D(X_test)
+    #C_test.detach()
+    _, pred_test = torch.max(C_test.data, 1)
+    # label
+    total = y_test.size(0)  # calc the number of examples
+    y_t = uneye(y_test, 'pred')
+    # calculate accuracy
+    correct = torch.sum(pred_test == y_t.data)
+    test_acc = correct / total * 100
+    return test_acc
 
 if __name__ == '__main__':
     a=load_data()

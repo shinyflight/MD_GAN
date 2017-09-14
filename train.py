@@ -9,7 +9,7 @@ from torch import mean
 from torch.autograd import Variable
 import yaml
 from lib import model, utils
-from utils import uneye
+from utils import uneye, test
 
 with open("MD_GAN.yaml") as stream:
     try:
@@ -49,22 +49,35 @@ ae_hidden_size = config['AE_HIDDEN_SIZE']
 
 
 # ##### define the MDGAN model
-G = model.Generator(g_input_size, g_hidden_size, g_output_size).cuda()
-D = model.Discriminator(d_input_size, d_hidden_size, d_output_size).cuda()
-AE = model.AutoEncoder(ae_input_size, ae_hidden_size).cuda()
+G = model.Generator(g_input_size, g_hidden_size, g_output_size)
+D = model.Discriminator(d_input_size, d_hidden_size, d_output_size)
+AE = model.AutoEncoder(ae_input_size, ae_hidden_size)
+
+# save parameter list
+theta_D_gan = [D.fc1._parameters['weight'], D.fc1._parameters['bias'],
+               D.out_gan._parameters['weight'], D.out_gan._parameters['bias']]
+theta_D_aux = [D.out_aux._parameters['weight'], D.out_aux._parameters['bias']]
+theta_G = [G.fc1._parameters['weight'], G.fc1._parameters['bias'],
+           G.fc2._parameters['weight'], G.fc2._parameters['bias'],]
+
 # define function for calculating loss function
 loss_bce = torch.nn.BCELoss().cuda()
 loss_nll = torch.nn.NLLLoss().cuda()
+
+# GPU mode
+if config['CUDA'] == True:
+    G.cuda(), D.cuda(), AE.cuda()
+    loss_bce.cuda(), loss_nll.cuda()
+
 # define optimizers
-G_solver = optim.RMSprop(G.parameters(), lr=lr)
-D_solver = optim.RMSprop(D.parameters(), lr=lr)
+G_solver = optim.RMSprop(theta_G, lr=lr)
+D_solver = optim.RMSprop(theta_D_gan + theta_D_aux, lr=lr)
 AE_solver = optim.Adam(AE.parameters(), lr=lr)
 
 
 # ##### Load dataset
 # define dataloader
 load_data = utils.load_data()
-
 
 # ##### train loop
 for ex_fold in range(num_fold):
@@ -78,56 +91,78 @@ for ex_fold in range(num_fold):
                 x_mb, y_mb, z_mb, zy_mb = next(load_minibatch)
                 X_real = Variable(x_mb).cuda()  # input features of real data
                 y = Variable(y_mb).cuda()  # class targets of real data
-                z = Variable(z_mb).cuda()
-                z_y = Variable(zy_mb).cuda()
+                z = Variable(z_mb, volatile=True).cuda() # inference mode
+                z_y = Variable(zy_mb, volatile=True).cuda()
                 # real & fake labels
                 y_real = Variable(torch.ones(y.size()[0]).unsqueeze(1)).cuda()
                 y_fake = Variable(torch.zeros(y.size()[0]).unsqueeze(1)).cuda()
+
                 ## Discriminator
                 for d_step in range(d_steps):
+                    for p in D.parameters():  # reset requires_grad
+                        p.requires_grad = True  # they are set to False below in netG update
+                    D.train(True)
                     D.zero_grad()
                     # generate fake data
-                    X_fake = G(z, z_y)
+                    G_z = G(z, z_y)
+                    X_fake = Variable(G_z.data).cuda() # volatile = False
                     # forward
                     D_real, C_real = D(X_real)  # model output
                     D_fake, C_fake = D(X_fake)
                     # calculate accuracy
-                    _, pred = torch.max(C_real.data, 1)
-                    total = y.size(0)  # calc the number of examples
+                    _, pred_real = torch.max(C_real.data, 1)
+                    _, pred_fake = torch.max(C_fake.data, 1)
+                    total = y.size(0)#*2  # calc the number of examples
                     y_c = uneye(y, 'pred')
-                    correct = torch.sum(pred == y_c.data)
-                    acc = correct/total * 100
-                    #pred = Variable(pred).cuda()
+                    correct = torch.sum(pred_real == y_c.data)
+                    #correct += torch.sum(pred_fake == y_c.data)
+                    train_acc = correct/total * 100
                     # loss
-                    C_loss = loss_nll(C_real, y_c) + loss_nll(C_fake, y_c)  # cross entropy aux loss
-                    D_loss = loss_bce(D_real, y_real) + loss_bce(D_fake, y_fake)
-                    #D_loss = mean(D_fake + eps) - mean(D_real + eps)  # WGAN loss
-                    DC_loss = D_loss + C_loss
-                    # backprop & update params
-                    DC_loss.backward()
+                    D_real_loss = loss_bce(D_real, y_real)
+                    D_fake_loss = loss_bce(D_fake, y_fake)
+                    #D_real_loss = -mean(D_real + eps)  # WGAN loss
+                    #D_fake_loss = mean(D_fake + eps)
+                    C_real_loss = loss_nll(C_real, y_c)
+                    C_fake_loss = loss_nll(C_fake, y_c)
+                    DC_real_loss = D_real_loss + C_real_loss
+                    DC_fake_loss = D_fake_loss + C_fake_loss
+                    # backprop & update params : split real and fake loss (GAN Hack)
+                    DC_real_loss.backward()
+                    D_solver.step()
+                    DC_fake_loss.backward()
                     D_solver.step()
 
-                    #print D._modules['fc1']._parameters['weight']
                     # weight clipping
-                    for p in D.parameters():
-                        p.data.clamp_(-.01, .01)
-                    ## Generator
+                    #for p in theta_D_gan:
+                    #    p.data.clamp_(-.01, .01)
+
+                ## Generator
                 for g_step in range(g_steps):
+                    for p in D.parameters():
+                        p.requires_grad = False  # to avoid computation
                     G.zero_grad()
                     # generate fake data
+                    z.volatile = False
                     X_fake = G(z, y)
                     # forward
                     D_real, C_real = D(X_real)  # model output
                     D_fake, C_fake = D(X_fake)
                     # loss
-                    C_loss = loss_nll(C_real, y_c) + loss_nll(C_fake, y_c)  # cross entropy aux loss
+                    C_real_loss = loss_nll(C_real, y_c)  # cross entropy aux loss
+                    C_fake_loss = loss_nll(C_fake, y_c)
                     #G_loss = -mean(D_fake + eps)  # WGAN loss
                     G_loss = loss_bce(D_fake, y_real)
-                    GC_loss = G_loss + C_loss
+                    GC_loss = G_loss + C_real_loss + C_fake_loss
                     # backprop & update params
                     GC_loss.backward()
                     G_solver.step()
 
             if epoch % log_every == 0:
-                print D_real.data[0][0], D_fake.data[0][0]
-                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f' % (epoch, extract(D_loss)[0], extract(G_loss)[0], extract(C_loss)[0],acc))
+                # calc test accuracy
+                test_acc = test(X_test, y_test, D)
+                D_loss = D_real_loss + D_fake_loss
+                C_loss = C_real_loss + C_fake_loss
+                print('epoch: %s; D: %s; G: %s; C: %s; train_acc: %.1f; test_acc: %.1f'
+                      % (epoch, extract(D_loss)[0], extract(G_loss)[0], extract(C_loss)[0],train_acc, test_acc))
+
+
